@@ -1,0 +1,111 @@
+---
+title: "Portfolio Exercise 1"
+author: "Logan O'Brien"
+date: "2/20/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+library(viridis)
+library(patchwork)
+library(scales)
+data <- read_csv("https://raw.githubusercontent.com/fantasydatapros/data/master/fantasypros/ecr/PPR_ECR.csv")
+```
+**Background:**  
+Fantasy Football is a great passion of mine, so I wanted to use this exercise to dig a little deeper into the world of Fantasy. This dataset includes the Average Draft Position and Expert Consensus Rank of each player in the preseason before the 2020 season. I wanted to see how these correlated with each other, as a sort of indication of how well the general population of Fantasy users followed the rankings of the "professionals" in the Fantasy Football realm.
+
+**Data Preparation and Plotting:**
+I had to do a little cleaning to the data before I could work with it, but it was relatively complete and tidy. I used separate() to seperate each player's position variable into their position and the rank given to them at that position, so that a single column wasn't holding two different pieces of information that I found important for analysis. From this cleaned dataset, I created one focused on player performance, and another which grouped players together by team, allowing for more thorough analysis from the team aspect. I used mutate() several times while creating the team averages dataset.
+
+I chose to focus on two areas when creating visualizations: Player Performance/Rankings and Team ADP vs ECR. For the Player-focused plots, I created two plots compounded using patchwork. Each have very similar styles, which I did in order to remain consistent throughout my analysis. By using facet_wrap and consistent coloring by position, I was able to include only one legend for both plots, and reduce the noise in my visualization. I opted to include the highest ranked player for each position, as a reference for what would be considered "good" in each plot. This is helpful for someone who is unsure about what the data represents. For the visualizations relating to team summaries, I manually entered a color from the viridis package so that the color scheme would remain consistent throughout. Also, I elected to not include an individual title for each bar plot, but rather combine the two and include a single title that connected each. I also changed the limits on the y-scale to ensure the differences were noticeable from team to team, and added labels for each team to aid with this. 
+
+**Findings:**
+Many of the findings I discovered were relatively expected. Fantasy Sports apps often include predicted rankings before and during drafts that would lead to players being drafted around an expected position, which is unsurprisingly similar to a given players ECR. What I did find interesting, however, was the plot highlighting the spread(worst ranking - best ranking), especially for the Defense/Special Teams position. San Francisco had the highest average ranking, but also had quite a large spread. This is an indication of the "professionals" being very unsure of San Francisco.
+
+It was also interesting to see the Rankings vs ADP on the team level. The top ten for each were a little different, but the ADP followed the ECR fairly closely.
+
+```{r include=FALSE}
+data_clean <- data %>% 
+  select(everything(), -`...1`) %>% 
+  separate(Pos, c('Pos', 'Pos_Rank'), sep = '(?<=[A-Za-z])(?=[0-9])') %>% 
+  drop_na
+data_clean$Pos_Rank <- as.numeric(data_clean$Pos_Rank)
+  
+player_perf <- data_clean %>% 
+  mutate(Player_Spread = Worst - Best)
+```
+
+```{r include=FALSE}
+team_data <- data_clean %>% 
+  group_by(Team) %>% 
+  mutate(
+    Team_ADP = mean(ADP),
+    Team_Rank = mean(Rank),
+    Team_Pos_Rank = mean(Pos_Rank)
+  ) %>%
+  filter(Team != 'DST') %>% 
+  select(Team, Team_ADP, Team_Rank, Team_Pos_Rank)
+team_data <- distinct(team_data)
+```
+
+```{r fig.height = 4, fig.width = 12}
+plot_adp_rank <- ggplot(data_clean) +
+  geom_point(aes(ADP, Rank, color=Pos), alpha=0.5, show.legend = FALSE) +
+  facet_wrap(~Pos) +
+  scale_color_viridis(discrete = TRUE) +
+  geom_text(aes(ADP, Rank, label = Player), 
+            data = data_clean[data_clean$Pos_Rank == 1,],
+            hjust=0, vjust=0, size=3) + 
+  theme(axis.ticks.y = element_blank(),
+        strip.background = element_blank(),
+        strip.text.x = element_blank()) +
+  labs(title = "2020 Player Average Draft Position vs Expert Consensus Ranking",
+       subtitle = "ECR for Players Before 2020 Season",
+       x = "Average Draft Position(ADP)",
+       y = "Expert Consensus Ranking(ECR)")
+
+plot_spread_avg <- ggplot(player_perf) +
+  geom_point(aes(Player_Spread, Avg, color=Pos), alpha=0.5) +
+  facet_wrap(~Pos) +
+  scale_color_viridis(discrete = TRUE) +
+  geom_text(aes(Player_Spread, Avg, label = Player), 
+            data = player_perf[player_perf$Pos_Rank == 1,],
+            hjust=0, vjust=0, size=3) + 
+  theme(axis.ticks.y = element_blank(),
+        strip.background = element_blank(),
+        strip.text.x = element_blank()) +
+  labs(title = "2020 Player Avg Ranking vs Ranking Spread",
+       subtitle = "Ranking Spread Refers to Difference Between Worst and Best ECR",
+       x = "Ranking Spread",
+       y = "Average Ranking", 
+       color = "Position")
+
+plot_adp_rank + plot_spread_avg + plot_annotation(
+  caption = 'Each Label Corresponds To The Highest Ranked Player in Each Position'
+)
+```
+
+```{r fig.height = 5, fig.width = 10}
+plot_adp <- ggplot(team_data[1:10,], aes(reorder(Team, Team_ADP), Team_ADP)) +
+  geom_bar(stat='identity', fill = "#1F968BFF") +
+  scale_y_continuous(limits=c(75, 200), oob = rescale_none) +
+  geom_text(aes(label = round(Team_ADP)), vjust = -0.5, size = 3) +
+  labs(x = "NFL Team",
+       y = "Average Combined Player ADP")
+
+plot_rank <- ggplot(team_data[1:10,], aes(reorder(Team, Team_Rank), Team_Rank)) +
+  geom_bar(stat='identity', fill = "#1F968BFF") +
+  scale_y_continuous(limits=c(75, 200), oob = rescale_none) +
+  geom_text(aes(label = round(Team_Rank)), vjust = -0.5, size = 3) +
+  labs(x = "NFL Team",
+       y = "Average Combined Player ECR")
+
+plot_rank + plot_adp + plot_annotation(
+  title = 'Highest Ranked(ECR) Teams vs Highest Drafted Teams',
+  subtitle = 'Total Based on Average ECR and ADP For All Players on Each Team'
+)
+```
